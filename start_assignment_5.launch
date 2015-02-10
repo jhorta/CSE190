@@ -1,0 +1,13 @@
+<launch>
+  <env name = "GSCAM_CONFIG" value = "v4l2src device=/dev/video1 !
+    video/x-raw-rgb,framerate=25/1 ! ffmpegcolorspace" />
+  <node pkg = "gscam" type = "gscam" name = "web_cam">
+    <param name = "camera_name" value = "web_cam" />
+    <remap from = "camera/image_raw" to = "camera/visible/image" />
+  </node>
+  <node pkg = "rqt_image_view" type = "rqt_image_view" name = "raw_image" />
+  <node pkg = "assignment_5" type = "motion_mode_keyboard" name = "motion_mode_keyboard" output = "screen" />
+  <node pkg = "assignment_5" type = "motion_detector" name = "motion_detector" output = "screen" />
+
+
+</launch>
