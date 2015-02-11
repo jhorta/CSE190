@@ -2,15 +2,23 @@
 #include <std_msgs/String.h>
 #include <geometry_msgs/Twist.h>
 #include <sensor_msgs/LaserScan.h>
+#include <termios.h>
 #include <sstream>
 #include <iostream>
 
 using namespace std;
+
 int main( int argc, char **argv ) {
 	ros::init(argc, argv, "motion_node_keyboard");
   ros::NodeHandle node;
-
   ros::Publisher pub = node.advertise<std_msgs::String>("/chatter", 1000);
+
+  termios tty;
+  tcgetattr(STDIN_FILENO, &tty);
+  
+  // Disable stdin echo
+  tty.c_lflag &= ~ECHO;
+  tcsetattr(STDIN_FILENO, TCSANOW, &tty); 
 
   ros::Rate loop_rate(10);
 
@@ -39,16 +47,9 @@ int main( int argc, char **argv ) {
         cout << "Entered invalid input." << endl;
       }
     } while( input != 1 || input != 2 );
-    // ss << input;
     ss << input << endl;
     msg.data = ss.str();
 
-    /*ros::Publisher move_pub = node.advertise<geometry_msgs::Twist>
-      ("/cmd_vel_mux/input/teleop", 1);
-      ros::Subscriber scan_pub = node.subscribe
-      ("scan", 1, scanCallback); 
-      ros::spin();
-      */
     if( prev != input ) {
       pub.publish(msg);
       prev = input;
@@ -57,5 +58,13 @@ int main( int argc, char **argv ) {
     ros::spinOnce();
     loop_rate.sleep();
   }
+  /*
+   *tcgetattr(STDIN_FILENO, &tty);
+
+    // we want to reenable echo 
+    tty.c_lflag |= ECHO;
+
+    tcsetattr(STDIN_FILENO, TCSANOW, &tty);
+   */
   return 0;
 }

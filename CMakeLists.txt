@@ -9,10 +9,13 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   rospy
   std_msgs
+  sensor_msgs
+  cv_bridge
+  image_transport
 )
 
 ## System dependencies are found with CMake's conventions
-# find_package(Boost REQUIRED COMPONENTS system)
+find_package( OpenCV REQUIRED )
 
 
 ## Uncomment this if the package has a setup.py. This macro ensures
@@ -96,6 +99,7 @@ catkin_package(
 # include_directories(include)
 include_directories(
   ${catkin_INCLUDE_DIRS}
+  ${OpenCV_INCLUDE_DIRS}
 )
 
 ## Declare a cpp library
@@ -163,7 +167,7 @@ include_directories(
 ## Add folders to be run by python nosetests
 # catkin_add_nosetests(test)
 add_executable(motion_detector src/motion_detector.cpp)
-target_link_libraries(motion_detector ${catkin_LIBRARIES})
+target_link_libraries(motion_detector ${OpenCV_LIBRARIES} ${catkin_LIBRARIES})
 
 add_executable(motion_mode_keyboard src/motion_mode_keyboard.cpp)
 target_link_libraries(motion_mode_keyboard ${catkin_LIBRARIES})
