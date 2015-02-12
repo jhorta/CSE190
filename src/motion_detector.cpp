@@ -20,6 +20,7 @@ static const std::string OPENCV_WINDOW = "Image window";
 image_transport::Publisher image_pub;
 Mat prev, current, flow, cflow, frame;
 Mat curr, gen;
+Ptr<BackgroundSubtractor> pMOG2;
 
 int option = 0;
 void drawOptFlowMap(const Mat& flow, Mat& cflowmap, int step,
@@ -36,7 +37,6 @@ void drawOptFlowMap(const Mat& flow, Mat& cflowmap, int step,
 }
 void processVideo(const sensor_msgs::Image::ConstPtr& msg) {
   //create Background Subtractor objects
-  Ptr<BackgroundSubtractor> pMOG2 = createBackgroundSubtractorMOG2(); //MOG2 approach
   cv_bridge::CvImagePtr cv_ptr;
   try
   {
@@ -49,24 +49,19 @@ void processVideo(const sensor_msgs::Image::ConstPtr& msg) {
   }
   curr = cv_ptr->image;
   pMOG2->apply(curr, gen);
-  //stringstream ss;
-  //rectangle(curr, cv::Point(10, 2), cv::Point(100,20),
-  //            cv::Scalar(255,255,255), -1);
-  //ss << 
   imshow("flow", gen);
+  cv::waitKey(30);
 
 }
 
 void imageGaussian(const sensor_msgs::Image::ConstPtr& msg) {
-  namedWindow("Frame");
-  namedWindow("FG Mask MOG 2");
-
-
+  // namedWindow("Frame");
+  // namedWindow("FG Mask MOG 2");
 
   processVideo(msg);  // THIS IS WHERE WE NEED TO PUT OUR VIDEO READ THISPLSSSSSSSSS
 
   //destroy GUI windows
-  destroyAllWindows();
+  // destroyAllWindows();
   return ;
 }
 void imageCb(const sensor_msgs::Image::ConstPtr& msg)
@@ -93,17 +88,17 @@ void imageCb(const sensor_msgs::Image::ConstPtr& msg)
     calcOpticalFlowFarneback(prev, current, flow, 0.5, 3, 15, 3, 5, 1.2, 0);
     cvtColor(prev, cflow, CV_GRAY2BGR);
     drawOptFlowMap(flow, cflow, 16, 1.5, CV_RGB(0, 255, 0));
+      // Draw an example circle on the video stream
+    if (cflow.rows > 60 && cflow.cols > 60)
+      cv::rectangle(cflow, cv::Point(50, 50), Point(100,100), CV_RGB(255,0,0));
     imshow("flow", cflow);
-    cout << "FUUUUUUUUUUUUUUUUUUUUUCK!!!!!!" << endl;
   }
 
-  // Draw an example circle on the video stream
-    if (cv_ptr->image.rows > 60 && cv_ptr->image.cols > 60)
-      cv::circle(cv_ptr->image, cv::Point(50, 50), 10, CV_RGB(255,0,0));
+
 
     // Update GUI Window
-    cv::imshow(OPENCV_WINDOW, cv_ptr->image);
-    cv::waitKey(10);
+    // cv::imshow("flow", cflow);
+    cv::waitKey(30);
     
     // Output modified video stream
     image_pub.publish(cv_ptr->toImageMsg());
@@ -113,9 +108,9 @@ void imageCb(const sensor_msgs::Image::ConstPtr& msg)
 void render( const sensor_msgs::Image::ConstPtr & msg ) {
   // cout << "RENDER IT YOURSELF!!!" << endl;
   if( option == 0 )
-  imageGaussian( msg );
+    imageGaussian( msg );
   if( option == 1 )
-  imageCb( msg );
+    imageCb( msg );
 }
 void respondToRequest( const std_msgs::String::ConstPtr & msg ) {
   if( msg->data.c_str()[0] == '1' ) {
@@ -133,24 +128,21 @@ int main( int argc, char **argv ) {
 	ros::init(argc, argv, "motion_detector");
   ros::NodeHandle node;
   ros::Subscriber sub_cam = node.subscribe("/camera/visible/image", 1, render);
+  pMOG2 = createBackgroundSubtractorMOG2(); //MOG2 approach
 
 
 /*  void imageCallback(const sensor_msgs::ImageConstPtr& msg)
-{
-  // ...
-}
-
 ros::NodeHandle nh;
 image_transport::ImageTransport it(nh);
-image_transport::Subscriber sub = it.subscribe("in_image_base_topic", 1, imageCallback);
-image_transport::Publisher pub = it.advertise("out_image_base_topic", 1);
 image_transport::Subscriber sub = it.subscribe("/camera/visible/image", 1, imageCallback);
 image_transport::Publisher pub = it.advertise("/camera/visible/image", 1); */
 
   ros::Subscriber sub = node.subscribe("/chatter",1000, respondToRequest);
+  cv::namedWindow("flow");
   cv::namedWindow(OPENCV_WINDOW);
   ros::spin();
   cv::destroyWindow(OPENCV_WINDOW);
+  cv::destroyWindow("flow");
 
   return 0;
 }
