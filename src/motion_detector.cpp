@@ -28,20 +28,20 @@ Scalar color(0,255,255);
 int dilation_size = 5;
 image_transport::Publisher pub;
 
-int option = 0;
+int option = 1;
 void drawOptFlowMap(const Mat& flow, Mat& cflowmap, int step,
-    double scale, const Scalar& color)
+    double threshold, const Scalar& color)
 {
   for(int y = 0; y < cflowmap.rows; y += step)
     for(int x = 0; x < cflowmap.cols; x += step)
     {
-      // Use p-theorem
       const Point2f& fxy = flow.at<Point2f>(y, x);
-      line(cflowmap, Point(x,y), Point(cvRound(x+fxy.x), cvRound(y+fxy.y)),
-          color);
-      circle(cflowmap, Point(x,y), 2, color, -1);
-      if( cv::norm(fxy - fxy ) > 150 ) {
-        rectangle( cflow, fxy, fxy, color, 2, 8, 0 );
+      if( sqrt((fxy.x*fxy.x)+(fxy.y*fxy.y)) > threshold ) {
+        cflowmap.at<uchar>(Point(x,y)) = 255;
+      }
+      else {
+        cflowmap.at<uchar>(Point(x,y)) = 0;
+        prev =prev;
       }
 
     }
@@ -75,7 +75,9 @@ void processVideo(const sensor_msgs::Image::ConstPtr& msg) {
   Mat threshold_output;
   vector<vector<Point> > contours;
   vector<Vec4i> hierarchy;
-  // IplImage* src_gray = new IplImage(gen);
+  
+  // Use p-theorem
+  threshold( gen, threshold_output, 100, 255, THRESH_BINARY );
   findContours( threshold_output, contours, hierarchy, CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE, Point(0, 0) );
 
   vector<vector<Point> > contours_poly( contours.size() );
@@ -99,7 +101,7 @@ void processVideo(const sensor_msgs::Image::ConstPtr& msg) {
     }
   }
   /**************************************************************************/
-  imshow("flow", other->image);
+  //imshow("flow", other->image);
   pub.publish(other->toImageMsg());
   cv::waitKey(30);
 
@@ -130,25 +132,23 @@ void imageCb(const sensor_msgs::Image::ConstPtr& msg)
 
   if( prev.data ) {
     calcOpticalFlowFarneback(prev, current, flow, 0.5, 3, 15, 10, 5, 1.2, 0);
-    cvtColor(prev, cflow, CV_GRAY2BGR);
-    // call pythagerian theorem on every pixel
-    drawOptFlowMap(flow, cflow, 16, 1.5, CV_RGB(0, 255, 0));
-    //threshold( cflow, threshold_output, 100, 255, THRESH_BINARY );
+    // cvtColor(prev, cflow, CV_GRAY2BGR);
+    drawOptFlowMap(flow, cflow, 1, 2, CV_RGB(0, 255, 0));
       // Draw an example circle on the video stream
-    if (cflow.rows > 60 && cflow.cols > 60)
-      cv::rectangle(cflow, cv::Point(50, 50), Point(100,100), CV_RGB(255,0,0));
-    imshow("flow", cflow);
+    // imshow("flow", cflow);
+    //cv_ptr->image = cflow;
+    swap(cv_ptr->image, cflow);
   }
 
     // Update GUI Window
     // cv::imshow("flow", cflow);
+    // sensor_msgs::ImagePtr msg2 = cv_bridge::CvImage(std_msgs::Header(), "bgr8", cflow).toImageMsg();
+    prev = current;
+    pub.publish(cv_ptr->toImageMsg());
     cv::waitKey(30);
-    sensor_msgs::ImagePtr msg2 = cv_bridge::CvImage(std_msgs::Header(), "bgr8", cflow).toImageMsg();
-    pub.publish(msg2);
-
+    
     // Output modified video stream
     //image_pub.publish(cv_ptr->toImageMsg());
-    swap(prev, current);
 }
 
 void render( const sensor_msgs::Image::ConstPtr & msg ) {
@@ -173,16 +173,15 @@ void respondToRequest( const std_msgs::String::ConstPtr & msg ) {
 // or create an image node and then publish to that?
 int main( int argc, char **argv ) {
 	ros::init(argc, argv, "motion_detector");
- // ros::Subscriber sub_cam = node.subscribe("/camera/visible/image", 1, render);
   pMOG2 = createBackgroundSubtractorMOG2(); //MOG2 approach
 
 
-/*  void imageCallback(const sensor_msgs::ImageConstPtr& msg)
-ros::NodeHandle nh; */
-ros::NodeHandle node;
-image_transport::ImageTransport it(node);
-image_transport::Subscriber mySub = it.subscribe("/camera/visible/image", 1, render);
-pub = it.advertise("/raw_image", 1);
+  /*  void imageCallback(const sensor_msgs::ImageConstPtr& msg)
+      ros::NodeHandle nh; */
+  ros::NodeHandle node;
+  image_transport::ImageTransport it(node);
+  image_transport::Subscriber mySub = it.subscribe("/camera/visible/image", 1, render);
+  pub = it.advertise("/raw_image", 1);
 
   ros::Subscriber sub = node.subscribe("/chatter",1000, respondToRequest);
   cv::namedWindow("flow");
