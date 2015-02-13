@@ -16,11 +16,17 @@
 using namespace std;
 using namespace cv;
 
-static const std::string OPENCV_WINDOW = "Image window";
 image_transport::Publisher image_pub;
 Mat prev, current, flow, cflow, frame;
-Mat curr, gen;
+Mat pre, next, curr, gen;
 Ptr<BackgroundSubtractor> pMOG2;
+RNG rng(12345);
+int x_start = 10, x_stop;
+int y_start = 350, y_stop = 530;
+int max_deviation = 20;
+Scalar color(0,255,255);
+int dilation_size = 5;
+image_transport::Publisher pub;
 
 int option = 0;
 void drawOptFlowMap(const Mat& flow, Mat& cflowmap, int step,
@@ -29,18 +35,24 @@ void drawOptFlowMap(const Mat& flow, Mat& cflowmap, int step,
   for(int y = 0; y < cflowmap.rows; y += step)
     for(int x = 0; x < cflowmap.cols; x += step)
     {
+      // Use p-theorem
       const Point2f& fxy = flow.at<Point2f>(y, x);
       line(cflowmap, Point(x,y), Point(cvRound(x+fxy.x), cvRound(y+fxy.y)),
           color);
       circle(cflowmap, Point(x,y), 2, color, -1);
+      if( cv::norm(fxy - fxy ) > 150 ) {
+        rectangle( cflow, fxy, fxy, color, 2, 8, 0 );
+      }
+
     }
 }
 void processVideo(const sensor_msgs::Image::ConstPtr& msg) {
-  //create Background Subtractor objects
-  cv_bridge::CvImagePtr cv_ptr;
+
+  cv_bridge::CvImagePtr cv_ptr, other;
   try
   {
     cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::MONO8);
+    other = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8);
   }
   catch (cv_bridge::Exception& e)
   {
@@ -49,26 +61,58 @@ void processVideo(const sensor_msgs::Image::ConstPtr& msg) {
   }
   curr = cv_ptr->image;
   pMOG2->apply(curr, gen);
-  imshow("flow", gen);
+  Mat element = getStructuringElement( MORPH_ELLIPSE, Size( 2*dilation_size+1, 2*dilation_size+1 ), Point( dilation_size, dilation_size ) );
+
+  /// Apply the specified morphology operation
+  morphologyEx( gen, curr, 2, element );
+  /**************************************************************************/
+  /*// Size for the images
+  CvMemStorage* storage;
+  CvSize imgSize;
+  CvSeq* contour;
+
+  next = gen; */
+  Mat threshold_output;
+  vector<vector<Point> > contours;
+  vector<Vec4i> hierarchy;
+  // IplImage* src_gray = new IplImage(gen);
+  findContours( threshold_output, contours, hierarchy, CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE, Point(0, 0) );
+
+  vector<vector<Point> > contours_poly( contours.size() );
+  vector<Rect> boundRect( contours.size() );
+  vector<Point2f>center( contours.size() );
+  vector<float>radius( contours.size() );
+
+  for( int i = 0; i < contours.size(); i++ )
+  { approxPolyDP( Mat(contours[i]), contours_poly[i], 3, true );
+    boundRect[i] = boundingRect( Mat(contours_poly[i]) );
+    minEnclosingCircle( (Mat)contours_poly[i], center[i], radius[i] );
+  }
+  Mat drawing = Mat::zeros( threshold_output.size(), CV_8UC3 );
+  for( int i = 0; i< contours.size(); i++ )
+  {
+    if( cv::norm(boundRect[i].tl() - boundRect[i].br() ) > 150 ) {
+      Scalar color = Scalar( rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255) );
+      //drawContours( drawing, contours_poly, i, color, 1, 8, vector<Vec4i>(), 0, Point() );
+      rectangle( drawing, boundRect[i].tl(), boundRect[i].br(), color, 2, 8, 0 );
+      rectangle( other->image, boundRect[i].tl(), boundRect[i].br(), color, 2, 8, 0 );
+    }
+  }
+  /**************************************************************************/
+  imshow("flow", other->image);
+  pub.publish(other->toImageMsg());
   cv::waitKey(30);
 
 }
 
 void imageGaussian(const sensor_msgs::Image::ConstPtr& msg) {
-  // namedWindow("Frame");
-  // namedWindow("FG Mask MOG 2");
 
   processVideo(msg);  // THIS IS WHERE WE NEED TO PUT OUR VIDEO READ THISPLSSSSSSSSS
 
-  //destroy GUI windows
-  // destroyAllWindows();
-  return ;
+  return;
 }
 void imageCb(const sensor_msgs::Image::ConstPtr& msg)
 {
-  ros::NodeHandle node;
-  image_transport::ImageTransport it(node);
-  image_pub = it.advertise("/image_converter/output_video", 1);
   cv_bridge::CvImagePtr cv_ptr;
   try
   {
@@ -85,23 +129,25 @@ void imageCb(const sensor_msgs::Image::ConstPtr& msg)
   current = foobar;
 
   if( prev.data ) {
-    calcOpticalFlowFarneback(prev, current, flow, 0.5, 3, 15, 3, 5, 1.2, 0);
+    calcOpticalFlowFarneback(prev, current, flow, 0.5, 3, 15, 10, 5, 1.2, 0);
     cvtColor(prev, cflow, CV_GRAY2BGR);
+    // call pythagerian theorem on every pixel
     drawOptFlowMap(flow, cflow, 16, 1.5, CV_RGB(0, 255, 0));
+    //threshold( cflow, threshold_output, 100, 255, THRESH_BINARY );
       // Draw an example circle on the video stream
     if (cflow.rows > 60 && cflow.cols > 60)
       cv::rectangle(cflow, cv::Point(50, 50), Point(100,100), CV_RGB(255,0,0));
     imshow("flow", cflow);
   }
 
-
-
     // Update GUI Window
     // cv::imshow("flow", cflow);
     cv::waitKey(30);
-    
+    sensor_msgs::ImagePtr msg2 = cv_bridge::CvImage(std_msgs::Header(), "bgr8", cflow).toImageMsg();
+    pub.publish(msg2);
+
     // Output modified video stream
-    image_pub.publish(cv_ptr->toImageMsg());
+    //image_pub.publish(cv_ptr->toImageMsg());
     swap(prev, current);
 }
 
@@ -121,27 +167,26 @@ void respondToRequest( const std_msgs::String::ConstPtr & msg ) {
     cout << "Received option 2";
     option = 0;
   }
-  cout << endl;
+  prev = 0;
 }
-
+// How do I publish to a new image?
+// or create an image node and then publish to that?
 int main( int argc, char **argv ) {
 	ros::init(argc, argv, "motion_detector");
-  ros::NodeHandle node;
-  ros::Subscriber sub_cam = node.subscribe("/camera/visible/image", 1, render);
+ // ros::Subscriber sub_cam = node.subscribe("/camera/visible/image", 1, render);
   pMOG2 = createBackgroundSubtractorMOG2(); //MOG2 approach
 
 
 /*  void imageCallback(const sensor_msgs::ImageConstPtr& msg)
-ros::NodeHandle nh;
-image_transport::ImageTransport it(nh);
-image_transport::Subscriber sub = it.subscribe("/camera/visible/image", 1, imageCallback);
-image_transport::Publisher pub = it.advertise("/camera/visible/image", 1); */
+ros::NodeHandle nh; */
+ros::NodeHandle node;
+image_transport::ImageTransport it(node);
+image_transport::Subscriber mySub = it.subscribe("/camera/visible/image", 1, render);
+pub = it.advertise("/raw_image", 1);
 
   ros::Subscriber sub = node.subscribe("/chatter",1000, respondToRequest);
   cv::namedWindow("flow");
-  cv::namedWindow(OPENCV_WINDOW);
   ros::spin();
-  cv::destroyWindow(OPENCV_WINDOW);
   cv::destroyWindow("flow");
 
   return 0;
