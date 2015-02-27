@@ -70,14 +70,13 @@ void processVideo(const sensor_msgs::Image::ConstPtr& msg) {
   CvMemStorage* storage;
   CvSize imgSize;
   CvSeq* contour;
-
   next = gen; */
   Mat threshold_output;
   vector<vector<Point> > contours;
   vector<Vec4i> hierarchy;
   
   // Use p-theorem
-  threshold( gen, threshold_output, 100, 255, THRESH_BINARY );
+  threshold( curr, threshold_output, 100, 255, THRESH_BINARY );
   findContours( threshold_output, contours, hierarchy, CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE, Point(0, 0) );
 
   vector<vector<Point> > contours_poly( contours.size() );
@@ -93,7 +92,7 @@ void processVideo(const sensor_msgs::Image::ConstPtr& msg) {
   Mat drawing = Mat::zeros( threshold_output.size(), CV_8UC3 );
   for( int i = 0; i< contours.size(); i++ )
   {
-    if( cv::norm(boundRect[i].tl() - boundRect[i].br() ) > 150 ) {
+    if( cv::norm(boundRect[i].tl() - boundRect[i].br() ) > 100 ) {
       Scalar color = Scalar( rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255) );
       //drawContours( drawing, contours_poly, i, color, 1, 8, vector<Vec4i>(), 0, Point() );
       rectangle( drawing, boundRect[i].tl(), boundRect[i].br(), color, 2, 8, 0 );
@@ -115,20 +114,18 @@ void imageGaussian(const sensor_msgs::Image::ConstPtr& msg) {
 }
 void imageCb(const sensor_msgs::Image::ConstPtr& msg)
 {
-  cv_bridge::CvImagePtr cv_ptr;
+  cv_bridge::CvImagePtr cv_ptr, other;
   try
   {
     cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::MONO8);
+    other = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8);
   }
   catch (cv_bridge::Exception& e)
   {
     ROS_ERROR("cv_bridge exception: %s", e.what());
     return;
   }
-  current = cv_ptr->image;
-  Mat foobar;
-  resize(current, foobar, Size(current.size().width, current.size().height) );
-  current = foobar;
+  swap(current,cv_ptr->image);
 
   if( prev.data ) {
     calcOpticalFlowFarneback(prev, current, flow, 0.5, 3, 15, 10, 5, 1.2, 0);
@@ -137,6 +134,45 @@ void imageCb(const sensor_msgs::Image::ConstPtr& msg)
       // Draw an example circle on the video stream
     // imshow("flow", cflow);
     //cv_ptr->image = cflow;
+  // Mat element = getStructuringElement( MORPH_ELLIPSE, Size( 2*dilation_size+1, 2*dilation_size+1 ), Point( dilation_size, dilation_size ) );
+
+  /// Apply the specified morphology operation
+  // morphologyEx( cv_ptr->image, curr, 2, element );
+  /**************************************************************************/
+  /*// Size for the images
+  CvMemStorage* storage;
+  CvSize imgSize;
+  CvSeq* contour;
+  next = gen; */
+  Mat threshold_output;
+  vector<vector<Point> > contours;
+  vector<uchar> hierarchy;
+  
+  // Use p-theorem
+  /*// threshold( cv_ptr->image, threshold_output, 100, 255, THRESH_BINARY );
+  findContours( cflow, contours, hierarchy, CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE, Point(0, 0) );
+
+  vector<vector<Point> > contours_poly( contours.size() );
+  vector<Rect> boundRect( contours.size() );
+  vector<Point2f>center( contours.size() );
+  vector<float>radius( contours.size() );
+
+  for( int i = 0; i < contours.size(); i++ )
+  { approxPolyDP( Mat(contours[i]), contours_poly[i], 3, true );
+    boundRect[i] = boundingRect( Mat(contours_poly[i]) );
+    minEnclosingCircle( (Mat)contours_poly[i], center[i], radius[i] );
+  }
+  Mat drawing = Mat::zeros( threshold_output.size(), CV_8UC3 );
+  for( int i = 0; i< contours.size(); i++ )
+  {
+    if( cv::norm(boundRect[i].tl() - boundRect[i].br() ) > 150 ) {
+      Scalar color = Scalar( rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255) );
+      //drawContours( drawing, contours_poly, i, color, 1, 8, vector<Vec4i>(), 0, Point() );
+      //rectangle( drawing, boundRect[i].tl(), boundRect[i].br(), color, 2, 8, 0 );
+      rectangle( cv_ptr->image, boundRect[i].tl(), boundRect[i].br(), color, 2, 8, 0 );
+    }
+  }  */
+  /**************************************************************************/
     swap(cv_ptr->image, cflow);
   }
 
@@ -145,10 +181,10 @@ void imageCb(const sensor_msgs::Image::ConstPtr& msg)
     // sensor_msgs::ImagePtr msg2 = cv_bridge::CvImage(std_msgs::Header(), "bgr8", cflow).toImageMsg();
     prev = current;
     pub.publish(cv_ptr->toImageMsg());
+    //pub.publish(other->toImageMsg());
     cv::waitKey(30);
     
     // Output modified video stream
-    //image_pub.publish(cv_ptr->toImageMsg());
 }
 
 void render( const sensor_msgs::Image::ConstPtr & msg ) {
@@ -169,8 +205,7 @@ void respondToRequest( const std_msgs::String::ConstPtr & msg ) {
   }
   prev = 0;
 }
-// How do I publish to a new image?
-// or create an image node and then publish to that?
+
 int main( int argc, char **argv ) {
 	ros::init(argc, argv, "motion_detector");
   pMOG2 = createBackgroundSubtractorMOG2(); //MOG2 approach
@@ -184,9 +219,7 @@ int main( int argc, char **argv ) {
   pub = it.advertise("/raw_image", 1);
 
   ros::Subscriber sub = node.subscribe("/chatter",1000, respondToRequest);
-  cv::namedWindow("flow");
   ros::spin();
-  cv::destroyWindow("flow");
 
   return 0;
 }
